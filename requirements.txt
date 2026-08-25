@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+python-multipart
+torch
+transformers
+sentencepiece
+shap
+pandas
+numpy
+ollama
+groq
+pdfplumber
+requests

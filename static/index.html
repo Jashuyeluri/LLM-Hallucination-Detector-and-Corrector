@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Verification Lab — LLM Hallucination Detector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="grain"></div>
+
+<header class="site-header">
+  <div class="header-glow"></div>
+  <div class="wrap header-inner">
+    <div class="wordmark">
+      <span class="wordmark-dot"></span>
+      <span class="eyebrow">VERIFICATION LAB</span>
+    </div>
+    <h1 class="title">LLM Hallucination Detector<span class="title-amp">&amp;</span>Corrector</h1>
+    <p class="subtitle">Every claim in an AI response, cross-examined against its source and stamped with a verdict — then rewritten to match the record.</p>
+
+    <div class="hero-diagram" aria-hidden="true">
+      <svg viewBox="0 0 720 140" class="flow-svg">
+        <path d="M 130 70 H 300" class="flow-path"/>
+        <path d="M 430 70 H 590" class="flow-path"/>
+        <circle r="3.5" class="flow-pulse flow-pulse--1"><animateMotion dur="2.6s" repeatCount="indefinite" path="M 130 70 H 300"/></circle>
+        <circle r="3.5" class="flow-pulse flow-pulse--2"><animateMotion dur="2.6s" begin="1.3s" repeatCount="indefinite" path="M 430 70 H 590"/></circle>
+
+        <g class="flow-node">
+          <rect x="10" y="35" width="120" height="70" rx="6" class="flow-box"/>
+          <text x="70" y="65" text-anchor="middle" class="flow-title">Source</text>
+          <text x="70" y="82" text-anchor="middle" class="flow-sub">the record</text>
+        </g>
+
+        <g class="flow-node">
+          <rect x="300" y="30" width="130" height="80" rx="6" class="flow-box flow-box--accent"/>
+          <text x="365" y="58" text-anchor="middle" class="flow-title">Claims</text>
+          <text x="365" y="75" text-anchor="middle" class="flow-sub">extracted &amp;</text>
+          <text x="365" y="89" text-anchor="middle" class="flow-sub">cross-checked</text>
+        </g>
+
+        <g class="flow-node">
+          <rect x="590" y="35" width="120" height="70" rx="6" class="flow-box"/>
+          <circle cx="628" cy="70" r="5" class="stamp-dot stamp-dot--teal"/>
+          <circle cx="650" cy="70" r="5" class="stamp-dot stamp-dot--clay"/>
+          <circle cx="672" cy="70" r="5" class="stamp-dot stamp-dot--amber"/>
+          <text x="650" y="90" text-anchor="middle" class="flow-sub">verdicts</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="mode-tabs" role="tablist" aria-label="Verification mode">
+    <button class="mode-tab is-active" data-mode="document" role="tab" aria-selected="true">
+      <span class="tab-index">01</span>
+      <span class="tab-text">
+        <span class="tab-label">Source document</span>
+        <span class="tab-desc">Check against text or a file you provide</span>
+      </span>
+    </button>
+    <button class="mode-tab" data-mode="live" role="tab" aria-selected="false">
+      <span class="tab-index">02</span>
+      <span class="tab-text">
+        <span class="tab-label">Live web search</span>
+        <span class="tab-desc">Check each claim against Tavily &amp; Wikipedia</span>
+      </span>
+    </button>
+  </section>
+
+  <section class="input-panel">
+    <div class="input-col" id="source-col">
+      <div class="input-col-head">
+        <h2>Source document</h2>
+        <span class="input-col-tag">Ground truth</span>
+      </div>
+      <label class="dropzone" for="source-file">
+        <input type="file" id="source-file" accept=".txt,.pdf" hidden>
+        <span class="dropzone-label">Drop a .txt or .pdf, or click to browse</span>
+        <span class="dropzone-filename" id="source-filename"></span>
+      </label>
+      <textarea id="source-text" placeholder="Paste the trusted source article, document, or context here…"></textarea>
+    </div>
+
+    <div class="input-divider" aria-hidden="true">
+      <span>VS</span>
+    </div>
+
+    <div class="input-col">
+      <div class="input-col-head">
+        <h2>LLM response</h2>
+        <span class="input-col-tag input-col-tag--suspect">Under review</span>
+      </div>
+      <label class="dropzone" for="response-file">
+        <input type="file" id="response-file" accept=".txt,.pdf" hidden>
+        <span class="dropzone-label">Drop a .txt or .pdf, or click to browse</span>
+        <span class="dropzone-filename" id="response-filename"></span>
+      </label>
+      <textarea id="response-text" placeholder="Paste the AI-generated answer or summary to verify…"></textarea>
+    </div>
+  </section>
+
+  <section class="run-row">
+    <label class="model-select">
+      <span>Model</span>
+      <select id="model-choice">
+        <option value="llama3">llama3</option>
+      </select>
+    </label>
+    <button id="run-btn" class="run-btn">
+      <span class="run-btn-label">Run verification</span>
+      <span class="run-btn-arrow">→</span>
+    </button>
+  </section>
+
+  <section class="status-row" id="status-row" hidden>
+    <div class="status-scanline"></div>
+    <div class="status-pulse"></div>
+    <span id="status-text">Extracting claims…</span>
+  </section>
+
+  <section class="results" id="results" hidden>
+
+    <div class="results-summary">
+      <div class="gauge-wrap">
+        <svg viewBox="0 0 160 160" class="gauge">
+          <circle cx="80" cy="80" r="68" class="gauge-track"/>
+          <circle cx="80" cy="80" r="68" class="gauge-fill" id="gauge-fill"/>
+        </svg>
+        <div class="gauge-center">
+          <span class="gauge-number" id="gauge-number">0</span>
+          <span class="gauge-percent">%</span>
+          <span class="gauge-caption">faithful</span>
+        </div>
+      </div>
+
+      <div class="stat-list">
+        <div class="stat-row stat-row--supported">
+          <span class="stat-dot"></span>
+          <span class="stat-label">Supported</span>
+          <span class="stat-value" id="stat-supported">0</span>
+        </div>
+        <div class="stat-row stat-row--contradicted">
+          <span class="stat-dot"></span>
+          <span class="stat-label">Contradicted</span>
+          <span class="stat-value" id="stat-contradicted">0</span>
+        </div>
+        <div class="stat-row stat-row--unsupported">
+          <span class="stat-dot"></span>
+          <span class="stat-label">Unsupported</span>
+          <span class="stat-value" id="stat-unsupported">0</span>
+        </div>
+        <div class="stat-row stat-row--unverified">
+          <span class="stat-dot"></span>
+          <span class="stat-label">Unverified</span>
+          <span class="stat-value" id="stat-unverified">0</span>
+        </div>
+        <div class="stat-row stat-row--total">
+          <span class="stat-label">Total claims examined</span>
+          <span class="stat-value" id="stat-total">0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="evidence-head">
+      <h2>Claim-by-claim record</h2>
+      <span class="evidence-head-rule"></span>
+    </div>
+    <div class="evidence-list" id="evidence-list"></div>
+
+    <div class="correction-panel" id="correction-panel" hidden>
+      <div class="correction-head">
+        <span class="correction-eyebrow">Revised for accuracy</span>
+        <h2>Corrected response</h2>
+      </div>
+      <p class="correction-text" id="correction-text"></p>
+    </div>
+
+    <div class="all-clear" id="all-clear" hidden>
+      <span class="all-clear-mark">✓</span>
+      <span>Every claim checks out. No correction needed.</span>
+    </div>
+
+  </section>
+
+  <footer class="site-footer">
+    <span>Source-grounded verification · claim decomposition + NLI entailment · Llama 3 &amp; DeBERTa-v3</span>
+  </footer>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
