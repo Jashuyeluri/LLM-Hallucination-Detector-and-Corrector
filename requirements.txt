@@ -11,3 +11,5 @@ ollama
 groq
 pdfplumber
 requests
+tiktoken
+protobuf
