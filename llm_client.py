@@ -2,16 +2,21 @@ import os
 
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "ollama").lower()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama3-70b-8192")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3")
+
+_KNOWN_GROQ_MODELS = {
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+}
 
 
 def chat(prompt, model=None):
-    """Sends a single-turn prompt to whichever LLM provider is configured
-    and returns the response text. Set LLM_PROVIDER=groq (with GROQ_API_KEY)
-    for cloud/hosted deployments, or leave as 'ollama' for local use."""
     if LLM_PROVIDER == "groq":
-        return _chat_groq(prompt, model or GROQ_MODEL)
+        groq_model = model if model in _KNOWN_GROQ_MODELS else GROQ_MODEL
+        return _chat_groq(prompt, groq_model)
     else:
         return _chat_ollama(prompt, model or OLLAMA_MODEL)
 
