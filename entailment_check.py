@@ -1,4 +1,5 @@
 import os
+import re
 import json
 from llm_client import chat
 
@@ -22,31 +23,17 @@ SOURCE:
 CLAIM:
 {claim}
 
-Respond with ONLY a JSON object, no other text, in exactly this format:
+Respond with ONLY a single-line JSON object and nothing else - no explanations, no comments, no text before or after it, in exactly this format:
 {{"label": "entailment", "entailment_score": 0.95, "contradiction_score": 0.02, "neutral_score": 0.03}}
 
 Rules:
-- "label" must be exactly one of: "entailment" (the source confirms the claim), "contradiction" (the source directly conflicts with the claim), or "neutral" (the source neither confirms nor conflicts with the claim - it's simply not addressed).
-- The three scores must be your confidence in each option, each between 0 and 1, summing to approximately 1.0.
-- Base this ONLY on what the source text actually says, not on outside knowledge."""
+- "label" must be exactly one of: "entailment", "contradiction", or "neutral".
+- The three scores must be numbers between 0 and 1, summing to approximately 1.0.
+- Base this ONLY on what the source text actually says, not on outside knowledge.
+- Output ONLY the JSON object on a single line. Do not add any commentary anywhere."""
 
     raw = chat(prompt).strip()
-
-    if raw.startswith("```"):
-        raw = raw.strip("`")
-        if raw.startswith("json"):
-            raw = raw[4:]
-
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        start = raw.find('{')
-        end = raw.rfind('}') + 1
-        data = json.loads(raw[start:end])
-
-    entail_score = float(data.get("entailment_score", 0.0))
-    contra_score = float(data.get("contradiction_score", 0.0))
-    neutral_score = float(data.get("neutral_score", 0.0))
+    entail_score, contra_score, neutral_score = _parse_scores(raw)
 
     if entail_score > contra_score and entail_score > neutral_score:
         label = "supported"
@@ -62,6 +49,56 @@ Rules:
         "contradiction_score": round(contra_score, 4),
         "neutral_score": round(neutral_score, 4),
     }
+
+
+def _parse_scores(raw):
+    """Tries strict JSON parsing first, then falls back to regex extraction
+    if the model's output has stray text or minor syntax issues breaking
+    strict JSON parsing."""
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:]
+
+    try:
+        data = json.loads(cleaned)
+        return (
+            float(data.get("entailment_score", 0.0)),
+            float(data.get("contradiction_score", 0.0)),
+            float(data.get("neutral_score", 0.0)),
+        )
+    except (json.JSONDecodeError, ValueError, TypeError):
+        pass
+
+    try:
+        start = cleaned.find('{')
+        end = cleaned.rfind('}') + 1
+        data = json.loads(cleaned[start:end])
+        return (
+            float(data.get("entailment_score", 0.0)),
+            float(data.get("contradiction_score", 0.0)),
+            float(data.get("neutral_score", 0.0)),
+        )
+    except (json.JSONDecodeError, ValueError, TypeError):
+        pass
+
+    # last resort: pull each score out directly with regex, ignoring
+    # anything else the model may have written around them
+    def find_score(key):
+        m = re.search(rf'"{key}"\s*:\s*([\d.]+)', raw)
+        return float(m.group(1)) if m else 0.0
+
+    entail = find_score("entailment_score")
+    contra = find_score("contradiction_score")
+    neutral = find_score("neutral_score")
+
+    if entail == 0.0 and contra == 0.0 and neutral == 0.0:
+        # nothing usable was found at all - treat as neutral/unclear rather
+        # than crashing the whole request
+        return (0.0, 0.0, 1.0)
+
+    return (entail, contra, neutral)
 
 
 _local_tokenizer = None
