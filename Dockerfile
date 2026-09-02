@@ -8,7 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 ENV LLM_PROVIDER=groq
-ENV ENTAILMENT_PROVIDER=hf_api
+ENV ENTAILMENT_PROVIDER=llm_judge
 ENV PORT=7860
 
 EXPOSE 7860
