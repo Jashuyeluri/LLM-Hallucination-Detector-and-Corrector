@@ -1,8 +1,3 @@
-bash
-
-cat /home/claude/hallucination_web/entailment_check.py
-Output
-
 import os
 import time
 import requests
