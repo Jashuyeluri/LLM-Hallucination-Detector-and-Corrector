@@ -4,10 +4,12 @@ import requests
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
 TAVILY_URL = "https://api.tavily.com/search"
 
+WIKI_HEADERS = {
+    "User-Agent": "HallucinationDetectorProject/1.0 (student capstone project; contact: none)"
+}
+
 
 def search_claim_snippets(claim, max_results=5):
-    """Returns a list of individual snippets instead of one merged string,
-    so each piece of evidence can be checked against the claim separately."""
     if not TAVILY_API_KEY:
         return []
 
@@ -40,7 +42,6 @@ def search_claim_snippets(claim, max_results=5):
 
 
 def search_wikipedia_snippets(claim, limit=3):
-    """Returns a list of individual page extracts instead of one merged string."""
     url = "https://en.wikipedia.org/w/api.php"
     params = {
         "action": "query",
@@ -50,7 +51,7 @@ def search_wikipedia_snippets(claim, limit=3):
         "srlimit": limit,
     }
     try:
-        response = requests.get(url, params=params, timeout=15)
+        response = requests.get(url, params=params, headers=WIKI_HEADERS, timeout=15)
         response.raise_for_status()
         data = response.json()
     except Exception as e:
@@ -70,7 +71,7 @@ def search_wikipedia_snippets(claim, limit=3):
             "format": "json",
         }
         try:
-            extract_res = requests.get(url, params=extract_params, timeout=15)
+            extract_res = requests.get(url, params=extract_params, headers=WIKI_HEADERS, timeout=15)
             extract_res.raise_for_status()
             pages = extract_res.json().get("query", {}).get("pages", {})
             for page in pages.values():
@@ -84,8 +85,6 @@ def search_wikipedia_snippets(claim, limit=3):
 
 
 def build_live_snippets(claim, use_tavily=True, use_wikipedia=True):
-    """Returns a list of separate evidence snippets for a claim (not merged),
-    each tagged with its source, so they can be checked independently."""
     snippets = []
     if use_tavily and TAVILY_API_KEY:
         for s in search_claim_snippets(claim):
