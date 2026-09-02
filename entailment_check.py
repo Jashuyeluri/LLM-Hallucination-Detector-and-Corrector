@@ -1,83 +1,67 @@
 import os
-import time
-import requests
+import json
+from llm_client import chat
 
-# 'hf_api' calls Hugging Face's hosted Inference API remotely - the model
-# runs on HF's servers, not this one, so torch/transformers never load
-# into this process's memory. This is the deployed/production mode.
-# 'local' loads the model in-process via transformers - only use this
-# locally where you have enough RAM; torch/transformers are imported
-# lazily inside _check_claim_local so they're never touched at all when
-# running in hf_api mode.
-ENTAILMENT_PROVIDER = os.environ.get("ENTAILMENT_PROVIDER", "local").lower()
-HF_API_TOKEN = os.environ.get("HF_API_TOKEN", "")
-HF_NLI_MODEL = os.environ.get("HF_NLI_MODEL", "cross-encoder/nli-deberta-v3-small")
+ENTAILMENT_PROVIDER = os.environ.get("ENTAILMENT_PROVIDER", "llm_judge").lower()
 LOCAL_NLI_MODEL = os.environ.get("NLI_MODEL_NAME", "cross-encoder/nli-deberta-v3-small")
-
-HF_API_URL = f"https://router.huggingface.co/hf-inference/models/{HF_NLI_MODEL}"
 
 
 def check_claim(source_text, claim):
-    if ENTAILMENT_PROVIDER == "hf_api":
-        return _check_claim_hf_api(source_text, claim)
-    else:
+    if ENTAILMENT_PROVIDER == "local":
         return _check_claim_local(source_text, claim)
+    else:
+        return _check_claim_llm_judge(source_text, claim)
 
 
-def _check_claim_hf_api(source_text, claim, max_retries=4):
-    headers = {}
-    if HF_API_TOKEN:
-        headers["Authorization"] = f"Bearer {HF_API_TOKEN}"
+def _check_claim_llm_judge(source_text, claim):
+    prompt = f"""You are a strict fact-checking judge. Given a SOURCE text and a CLAIM, decide the relationship between them.
 
-    payload = {"inputs": {"text": source_text[:2000], "text_pair": claim}}
+SOURCE:
+{source_text[:3000]}
 
-    for attempt in range(max_retries):
-        try:
-            response = requests.post(HF_API_URL, headers=headers, json=payload, timeout=30)
-        except requests.RequestException as e:
-            if attempt == max_retries - 1:
-                raise
-            time.sleep(3)
-            continue
+CLAIM:
+{claim}
 
-        if response.status_code == 200:
-            data = response.json()
-            # response is normally [[{label, score}, ...]] or [{label, score}, ...]
-            if isinstance(data, list) and data and isinstance(data[0], list):
-                data = data[0]
-            scores = {item["label"].lower(): item["score"] for item in data}
-            entail_score = scores.get("entailment", 0.0)
-            contra_score = scores.get("contradiction", 0.0)
-            neutral_score = scores.get("neutral", 0.0)
+Respond with ONLY a JSON object, no other text, in exactly this format:
+{{"label": "entailment", "entailment_score": 0.95, "contradiction_score": 0.02, "neutral_score": 0.03}}
 
-            if entail_score > contra_score and entail_score > neutral_score:
-                label = "supported"
-            elif contra_score > entail_score and contra_score > neutral_score:
-                label = "contradicted"
-            else:
-                label = "unsupported"
+Rules:
+- "label" must be exactly one of: "entailment" (the source confirms the claim), "contradiction" (the source directly conflicts with the claim), or "neutral" (the source neither confirms nor conflicts with the claim - it's simply not addressed).
+- The three scores must be your confidence in each option, each between 0 and 1, summing to approximately 1.0.
+- Base this ONLY on what the source text actually says, not on outside knowledge."""
 
-            return {
-                "claim": claim,
-                "label": label,
-                "entailment_score": round(entail_score, 4),
-                "contradiction_score": round(contra_score, 4),
-                "neutral_score": round(neutral_score, 4),
-            }
+    raw = chat(prompt).strip()
 
-        # model cold-starting on HF's side - wait and retry
-        if response.status_code == 503:
-            wait = 5
-            try:
-                wait = min(response.json().get("estimated_time", 5), 20)
-            except Exception:
-                pass
-            time.sleep(wait)
-            continue
+    if raw.startswith("```"):
+        raw = raw.strip("`")
+        if raw.startswith("json"):
+            raw = raw[4:]
 
-        response.raise_for_status()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        start = raw.find('{')
+        end = raw.rfind('}') + 1
+        data = json.loads(raw[start:end])
 
-    raise RuntimeError(f"HF Inference API did not respond successfully after {max_retries} attempts")
+    entail_score = float(data.get("entailment_score", 0.0))
+    contra_score = float(data.get("contradiction_score", 0.0))
+    neutral_score = float(data.get("neutral_score", 0.0))
+
+    if entail_score > contra_score and entail_score > neutral_score:
+        label = "supported"
+    elif contra_score > entail_score and contra_score > neutral_score:
+        label = "contradicted"
+    else:
+        label = "unsupported"
+
+    return {
+        "claim": claim,
+        "label": label,
+        "entailment_score": round(entail_score, 4),
+        "contradiction_score": round(contra_score, 4),
+        "neutral_score": round(neutral_score, 4),
+    }
 
 
 _local_tokenizer = None
@@ -128,10 +112,6 @@ def check_all_claims(source_text, claims):
 
 
 def check_claim_against_snippets(snippets, claim):
-    """Checks a claim against each evidence snippet separately and returns
-    the strongest, most decisive result — rather than concatenating all
-    snippets into one premise, which can confuse the model when snippets
-    describe similar-but-different real events."""
     if not snippets:
         return {
             "claim": claim, "label": "unverified",
